@@ -1,8 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, ClientOnly } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Bike, Car, History, Home, MapPin, User, Zap } from "lucide-react";
+import { Bike, Car, Crosshair, History, Home, Loader2, MapPin, User, Zap } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
+import { getPlaceLocation, getRoute, searchPlaces, type PlaceSuggestion } from "@/lib/maps.functions";
+import { RideMap, type MapPoint } from "@/components/RideMap";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -19,22 +21,82 @@ export const Route = createFileRoute("/")({
 });
 
 const vehicles = [
-  { name: "Bike", icon: Bike, price: "₹70", time: "3 min" },
-  { name: "Auto", icon: Zap, price: "₹100", time: "5 min" },
-  { name: "Car", icon: Car, price: "₹150", time: "7 min" },
+  { name: "Bike", icon: Bike, base: 20, perKm: 8, time: "3 min" },
+  { name: "Auto", icon: Zap, base: 30, perKm: 12, time: "5 min" },
+  { name: "Car", icon: Car, base: 50, perKm: 20, time: "7 min" },
 ];
+
+type RouteInfo = { distanceKm: number; durationMinutes: number; polyline: string | null };
 
 function Index() {
   const [selected, setSelected] = useState(0);
-  const [pickup, setPickup] = useState("");
-  const [destination, setDestination] = useState("");
+  const [pickup, setPickup] = useState<MapPoint | null>(null);
+  const [destination, setDestination] = useState<MapPoint | null>(null);
+  const [pickupLabel, setPickupLabel] = useState("");
+  const [destinationLabel, setDestinationLabel] = useState("");
+  const [route, setRoute] = useState<RouteInfo | null>(null);
+  const [loadingRoute, setLoadingRoute] = useState(false);
+  const [locating, setLocating] = useState(false);
+
+  useEffect(() => {
+    if (!pickup || !destination) {
+      setRoute(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingRoute(true);
+    getRoute({ data: { origin: pickup, destination } })
+      .then((r) => {
+        if (!cancelled) setRoute(r);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) {
+          setRoute(null);
+          toast.error("Could not find a route between these locations");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingRoute(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pickup, destination]);
+
+  const useMyLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("GPS is not supported on this device");
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        setPickup({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+        setPickupLabel("My current location");
+        toast.success("Pickup set to your current location");
+      },
+      () => {
+        setLocating(false);
+        toast.error("Could not get your location. Please allow location access.");
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
 
   const bookRide = () => {
-    if (!pickup.trim() || !destination.trim()) {
+    if (!pickup || !destination) {
       toast.error("Please enter pickup and destination");
       return;
     }
-    toast.success(`Searching for ${vehicles[selected]?.name ?? "ride"}...`);
+    if (!route) {
+      toast.error("Wait for the route to be calculated");
+      return;
+    }
+    const v = vehicles[selected]!;
+    const fare = Math.round(v.base + v.perKm * route.distanceKm);
+    toast.success(`Searching for ${v.name}... Estimated fare ₹${fare}`);
   };
 
   return (
@@ -52,15 +114,81 @@ function Index() {
           <p className="text-2xl font-semibold text-primary">Go Anywhere.</p>
 
           <div className="mt-6 space-y-4">
-            <LocationInput label="Pickup Location" value={pickup} onChange={setPickup} tone="text-success" />
-            <LocationInput label="Destination" value={destination} onChange={setDestination} tone="text-destructive" />
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <PlaceInput
+                  label="Pickup Location"
+                  value={pickupLabel}
+                  onTextChange={(t) => {
+                    setPickupLabel(t);
+                    setPickup(null);
+                  }}
+                  onSelect={(p, label) => {
+                    setPickup(p);
+                    setPickupLabel(label);
+                  }}
+                  tone="text-success"
+                />
+              </div>
+              <button
+                onClick={useMyLocation}
+                aria-label="Use my current location"
+                title="Use my current location"
+                className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl border border-input bg-card text-primary transition-colors hover:bg-accent"
+              >
+                {locating ? <Loader2 className="h-5 w-5 animate-spin" /> : <Crosshair className="h-5 w-5" />}
+              </button>
+            </div>
+            <PlaceInput
+              label="Destination"
+              value={destinationLabel}
+              onTextChange={(t) => {
+                setDestinationLabel(t);
+                setDestination(null);
+              }}
+              onSelect={(p, label) => {
+                setDestination(p);
+                setDestinationLabel(label);
+              }}
+              tone="text-destructive"
+            />
           </div>
+
+          <div className="mt-5">
+            <ClientOnly
+              fallback={
+                <div className="flex h-56 w-full items-center justify-center rounded-2xl border border-border bg-card text-sm text-muted-foreground">
+                  Loading map...
+                </div>
+              }
+            >
+              <RideMap pickup={pickup} destination={destination} polyline={route?.polyline ?? null} />
+            </ClientOnly>
+          </div>
+
+          {(loadingRoute || route) && (
+            <div className="mt-4 flex items-center justify-between rounded-2xl border border-border bg-card px-4 py-3">
+              {loadingRoute ? (
+                <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Calculating route...
+                </span>
+              ) : (
+                route && (
+                  <>
+                    <span className="text-sm font-semibold text-foreground">{route.distanceKm} km</span>
+                    <span className="text-sm text-muted-foreground">≈ {route.durationMinutes} min ride</span>
+                  </>
+                )
+              )}
+            </div>
+          )}
 
           <h3 className="mt-8 mb-4 text-xl font-bold text-foreground">Choose Your Ride</h3>
           <div className="space-y-3">
             {vehicles.map((v, i) => {
               const Icon = v.icon;
               const active = selected === i;
+              const fare = route ? Math.round(v.base + v.perKm * route.distanceKm) : null;
               return (
                 <button
                   key={v.name}
@@ -72,9 +200,13 @@ function Index() {
                   <Icon className="h-10 w-10 text-primary" />
                   <div className="flex-1">
                     <div className="text-lg font-bold text-foreground">{v.name}</div>
-                    <div className="text-sm text-muted-foreground">{v.time} away</div>
+                    <div className="text-sm text-muted-foreground">
+                      {v.time} away · ₹{v.base} + ₹{v.perKm}/km
+                    </div>
                   </div>
-                  <div className="text-lg font-bold text-foreground">{v.price}</div>
+                  <div className="text-lg font-bold text-foreground">
+                    {fare !== null ? `₹${fare}` : "—"}
+                  </div>
                 </button>
               );
             })}
@@ -106,26 +238,99 @@ function Index() {
   );
 }
 
-function LocationInput({
+function PlaceInput({
   label,
   value,
-  onChange,
+  onTextChange,
+  onSelect,
   tone,
 }: {
   label: string;
   value: string;
-  onChange: (v: string) => void;
+  onTextChange: (t: string) => void;
+  onSelect: (point: MapPoint, label: string) => void;
   tone: string;
 }) {
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const sessionTokenRef = useRef<string>(crypto.randomUUID());
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const text = value.trim();
+    if (text.length < 3) {
+      setSuggestions([]);
+      setOpen(false);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      const requestId = ++requestIdRef.current;
+      try {
+        const { suggestions: results } = await searchPlaces({
+          data: { input: text, sessionToken: sessionTokenRef.current },
+        });
+        if (requestId !== requestIdRef.current) return;
+        setSuggestions(results);
+        setOpen(results.length > 0);
+      } catch (err) {
+        console.error(err);
+      }
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [value]);
+
+  const pick = async (s: PlaceSuggestion) => {
+    setOpen(false);
+    setBusy(true);
+    try {
+      const { location, label: placeLabel } = await getPlaceLocation({
+        data: { placeId: s.placeId, sessionToken: sessionTokenRef.current },
+      });
+      sessionTokenRef.current = crypto.randomUUID();
+      onSelect(location, placeLabel);
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not get that place's location");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <label className="flex items-center gap-3 rounded-2xl border border-input bg-card px-4 py-3 focus-within:border-primary">
-      <MapPin className={`h-5 w-5 ${tone}`} />
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={label}
-        className="w-full bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
-      />
-    </label>
+    <div className="relative">
+      <label className="flex items-center gap-3 rounded-2xl border border-input bg-card px-4 py-3 focus-within:border-primary">
+        <MapPin className={`h-5 w-5 ${tone}`} />
+        <input
+          value={value}
+          onChange={(e) => onTextChange(e.target.value)}
+          onFocus={() => suggestions.length > 0 && setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder={label}
+          className="w-full bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
+        />
+        {busy && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+      </label>
+      {open && (
+        <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-2xl border border-border bg-card shadow-lg">
+          {suggestions.map((s) => (
+            <li key={s.placeId}>
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(s)}
+                className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-foreground hover:bg-accent"
+              >
+                <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="truncate">{s.text}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
