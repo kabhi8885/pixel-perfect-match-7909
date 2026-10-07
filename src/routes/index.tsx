@@ -1,9 +1,10 @@
 import { createFileRoute, ClientOnly } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Bike, Car, Crosshair, History, Home, Loader2, MapPin, User, Zap } from "lucide-react";
+import { Bike, Car, Crosshair, History, Home, Loader2, MapPin, Sparkles, User, Zap } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { getPlaceLocation, getRoute, searchPlaces, type PlaceSuggestion } from "@/lib/maps.functions";
+import { recommendRide, type RideRecommendation } from "@/lib/recommend.functions";
 import { RideMap, type MapPoint } from "@/components/RideMap";
 
 export const Route = createFileRoute("/")({
@@ -37,6 +38,10 @@ function Index() {
   const [route, setRoute] = useState<RouteInfo | null>(null);
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiRec, setAiRec] = useState<RideRecommendation | null>(null);
+
+  useEffect(() => setAiRec(null), [pickup, destination]);
 
   useEffect(() => {
     if (!pickup || !destination) {
@@ -83,6 +88,32 @@ function Index() {
       },
       { enableHighAccuracy: true, timeout: 10000 },
     );
+  };
+
+  const askAi = async () => {
+    if (!pickup || !destination || !route) {
+      toast.error("Enter pickup and destination first");
+      return;
+    }
+    setAiLoading(true);
+    setAiRec(null);
+    try {
+      const rec = await recommendRide({
+        data: {
+          pickup: pickupLabel,
+          destination: destinationLabel,
+          choice: vehicles[selected]!.name,
+          distanceKm: route.distanceKm,
+          durationMinutes: route.durationMinutes,
+          options: vehicles.map((v) => ({ name: v.name, fare: Math.round(v.base + v.perKm * route.distanceKm), eta: v.time })),
+        },
+      });
+      setAiRec(rec);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not get a recommendation");
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const bookRide = () => {
@@ -211,6 +242,32 @@ function Index() {
               );
             })}
           </div>
+
+          <button
+            onClick={askAi}
+            disabled={aiLoading}
+            className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-2xl border-2 border-primary bg-card font-semibold text-primary transition-colors hover:bg-accent disabled:opacity-60"
+          >
+            {aiLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
+            {aiLoading ? "Thinking..." : "Recommend best ride (AI)"}
+          </button>
+          {aiRec && (
+            <div className="mt-3 rounded-2xl border border-primary bg-accent p-4">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-foreground">AI suggests: {aiRec.recommended}</span>
+                {vehicles[selected]?.name !== aiRec.recommended && (
+                  <button
+                    onClick={() => setSelected(vehicles.findIndex((v) => v.name === aiRec.recommended))}
+                    className="text-sm font-semibold text-primary underline"
+                  >
+                    Choose it
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">{aiRec.reason}</p>
+            </div>
+          )}
+
 
           <button
             onClick={bookRide}
