@@ -34,7 +34,7 @@ function Index() {
       toast.error("Please enter pickup and destination");
       return;
     }
-    toast.success(`Searching for ${vehicles[selected].name}...`);
+    toast.success(`Searching for ${vehicles[selected]?.name ?? "ride"}...`);
   };
 
   return (
