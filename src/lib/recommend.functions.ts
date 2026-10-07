@@ -25,7 +25,7 @@ export const recommendRide = createServerFn({ method: "POST" })
     };
   })
   .handler(async ({ data }): Promise<RideRecommendation> => {
-    const apiKey = process.env.LOVABLE_API_KEY;
+    const apiKey = process.env["LOVABLE_API_KEY"];
     if (!apiKey) throw new Error("AI is not configured");
 
     const prompt = `Trip: from "${data.pickup}" to "${data.destination}", ${data.distanceKm} km, about ${data.durationMinutes} min by road in India.
