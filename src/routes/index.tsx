@@ -321,10 +321,50 @@ function Index() {
 
           <button
             onClick={bookRide}
-            className="mt-6 h-14 w-full rounded-2xl bg-primary text-lg font-bold text-primary-foreground shadow transition-opacity hover:opacity-90"
+            disabled={bookingSaving}
+            className="mt-6 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-lg font-bold text-primary-foreground shadow transition-opacity hover:opacity-90 disabled:opacity-60"
           >
-            BOOK RIDE
+            {bookingSaving && <Loader2 className="h-5 w-5 animate-spin" />}
+            {bookingSaving ? "BOOKING..." : "BOOK RIDE"}
           </button>
+
+          {booking && (
+            <div className="mt-4 rounded-2xl border border-border bg-card p-4">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-foreground">
+                  {booking.vehicle} · ₹{booking.fare}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {booking.distance_km} km
+                </span>
+              </div>
+              <p className="mt-1 truncate text-sm text-muted-foreground">
+                {booking.pickup_label} → {booking.destination_label}
+              </p>
+              <div className="mt-3 flex items-center gap-1">
+                {(["pending", "en_route", "reached"] as const).map((s, i) => {
+                  const steps = ["pending", "en_route", "reached"];
+                  const current = steps.indexOf(booking.status);
+                  const active = i <= current;
+                  const labels = { pending: "Pending", en_route: "En route", reached: "Reached" };
+                  return (
+                    <div key={s} className="flex flex-1 flex-col items-center gap-1">
+                      <div
+                        className={`h-1.5 w-full rounded-full ${active ? "bg-primary" : "bg-muted"}`}
+                      />
+                      <span
+                        className={`text-[11px] font-medium ${
+                          booking.status === s ? "text-primary" : "text-muted-foreground"
+                        }`}
+                      >
+                        {labels[s]}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </main>
 
         <nav className="fixed bottom-0 left-1/2 flex w-full max-w-md -translate-x-1/2 justify-around border-t border-border bg-card py-2">
