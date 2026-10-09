@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import { Bike, Car, Crosshair, History, Home, Loader2, MapPin, Sparkles, User, Zap } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { getPlaceLocation, getRoute, searchPlaces, type PlaceSuggestion } from "@/lib/maps.functions";
+import { supabase } from "@/integrations/supabase/client";
+import type { Tables } from "@/integrations/supabase/types";
 import { recommendRide, type RideRecommendation } from "@/lib/recommend.functions";
 import { RideMap, type MapPoint } from "@/components/RideMap";
 
@@ -40,6 +42,8 @@ function Index() {
   const [locating, setLocating] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiRec, setAiRec] = useState<RideRecommendation | null>(null);
+  const [booking, setBooking] = useState<Tables<"ride_bookings"> | null>(null);
+  const [bookingSaving, setBookingSaving] = useState(false);
 
   useEffect(() => setAiRec(null), [pickup, destination]);
 
