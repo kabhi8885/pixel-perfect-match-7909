@@ -120,7 +120,7 @@ function Index() {
     }
   };
 
-  const bookRide = () => {
+  const bookRide = async () => {
     if (!pickup || !destination) {
       toast.error("Please enter pickup and destination");
       return;
@@ -131,8 +131,54 @@ function Index() {
     }
     const v = vehicles[selected]!;
     const fare = Math.round(v.base + v.perKm * route.distanceKm);
-    toast.success(`Searching for ${v.name}... Estimated fare ₹${fare}`);
+    setBookingSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from("ride_bookings")
+        .insert({
+          pickup_label: pickupLabel || "Pickup",
+          pickup_lat: pickup.latitude,
+          pickup_lng: pickup.longitude,
+          destination_label: destinationLabel || "Destination",
+          destination_lat: destination.latitude,
+          destination_lng: destination.longitude,
+          vehicle: v.name,
+          fare,
+          distance_km: route.distanceKm,
+          duration_minutes: route.durationMinutes,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      setBooking(data);
+      toast.success(`${v.name} booked! Fare ₹${fare}`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not save your booking. Please try again.");
+    } finally {
+      setBookingSaving(false);
+    }
   };
+
+  // Demo: advance the ride status pending -> en_route -> reached
+  useEffect(() => {
+    if (!booking || booking.status === "reached") return;
+    const next = booking.status === "pending" ? "en_route" : "reached";
+    const timer = setTimeout(async () => {
+      const { data, error } = await supabase
+        .from("ride_bookings")
+        .update({ status: next })
+        .eq("id", booking.id)
+        .select()
+        .single();
+      if (!error && data) {
+        setBooking(data);
+        if (next === "en_route") toast.success("Your ride is on the way!");
+        if (next === "reached") toast.success("Your ride has arrived!");
+      }
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [booking]);
 
   return (
     <div className="min-h-screen bg-muted">
